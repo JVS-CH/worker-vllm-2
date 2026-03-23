@@ -14,6 +14,11 @@ ARG MODEL_REVISION=""
 ARG TOKENIZER_REVISION=""
 ARG VLLM_NIGHTLY="false"
 
+# --- Local model support ---
+# Set to "true" and place model files in ./local_model/ next to this Dockerfile
+# to skip downloading from HuggingFace during build.
+ARG USE_LOCAL_MODEL="false"
+
 ENV MODEL_NAME=$MODEL_NAME \
     MODEL_REVISION=$MODEL_REVISION \
     TOKENIZER_NAME=$TOKENIZER_NAME \
@@ -39,12 +44,25 @@ RUN if [ "${VLLM_NIGHTLY}" = "true" ]; then \
 
 COPY src /src
 
+# Option A: Copy model from local directory (fast, no download)
+# Requires: ./local_model/ folder next to Dockerfile with model files
+# The wildcard + true trick makes COPY optional (won't fail if folder is empty)
+COPY local_mode[l]/ ${BASE_PATH}/huggingface-cache/hub/
+
+# Option B: Download model from HuggingFace (only if local_model/ was empty)
 RUN --mount=type=secret,id=HF_TOKEN,required=false \
     if [ -f /run/secrets/HF_TOKEN ]; then \
       export HF_TOKEN=$(cat /run/secrets/HF_TOKEN); \
     fi && \
     if [ -n "$MODEL_NAME" ]; then \
-      python3 /src/download_model.py; \
+      # Check if model already exists from local copy
+      SNAPSHOT_DIR=$(find ${BASE_PATH}/huggingface-cache/hub/ -type d -name "snapshots" 2>/dev/null | head -1); \
+      if [ -n "$SNAPSHOT_DIR" ] && [ "$(ls -A "$SNAPSHOT_DIR" 2>/dev/null)" ]; then \
+        echo "Model already present from local copy, skipping download."; \
+      else \
+        echo "Downloading model from HuggingFace..."; \
+        python3 /src/download_model.py; \
+      fi; \
     fi
 
 # Override vllm-openai default entrypoint with RunPod handler
