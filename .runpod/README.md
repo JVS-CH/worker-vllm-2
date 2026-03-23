@@ -1,263 +1,177 @@
-![vLLM worker banner](https://cpjrphpz3t5wbwfe.public.blob.vercel-storage.com/worker-vllm_banner.jpeg)
+# Qwen3.5 vLLM Serverless Endpoint Worker
 
-Run LLMs using [vLLM](https://docs.vllm.ai) with an OpenAI-compatible API
+[![Deploy on RunPod](https://img.shields.io/badge/RunPod-Deploy-blue?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PC9zdmc+)](https://www.runpod.io/console/hub)
 
----
+Deploy OpenAI-compatible LLM endpoints powered by [vLLM](https://github.com/vllm-project/vllm) on RunPod Serverless.
 
-[![RunPod](https://api.runpod.io/badge/runpod-workers/worker-vllm)](https://www.runpod.io/console/hub/runpod-workers/worker-vllm)
+Forked from [runpod-workers/worker-vllm](https://github.com/runpod-workers/worker-vllm) with the following changes:
 
----
+- **vLLM 0.18.0** (includes full Qwen3.5 Gated Delta Networks architecture support)
+- **CUDA 12.9.1** base image
+- **FlashInfer** bundled via `vllm[flashinfer]`
+- PyTorch cu129 wheels
+- Dependency install order fixed (vLLM first, then requirements.txt) to prevent PyTorch version conflicts
 
-## Endpoint Configuration
+## Quick Start
 
-All behaviour is controlled through environment variables:
+### Option 1: Deploy from RunPod Hub
 
-| Environment Variable                | Description                                       | Default             | Options                                                            |
-| ----------------------------------- | ------------------------------------------------- | ------------------- | ------------------------------------------------------------------ |
-| `MODEL_NAME`                        | Path of the model weights                         | "facebook/opt-125m" | Local folder or Hugging Face repo ID                               |
-| `HF_TOKEN`                          | HuggingFace access token for gated/private models |                     | Your HuggingFace access token                                      |
-| `MAX_MODEL_LEN`                     | Model's maximum context length                    |                     | Integer (e.g., 4096)                                               |
-| `QUANTIZATION`                      | Quantization method                               |                     | "awq", "gptq", "squeezellm", "bitsandbytes"                        |
-| `TENSOR_PARALLEL_SIZE`              | Number of GPUs                                    | 1                   | Integer                                                            |
-| `GPU_MEMORY_UTILIZATION`            | Fraction of GPU memory to use                     | 0.95                | Float between 0.0 and 1.0                                          |
-| `MAX_NUM_SEQS`                      | Maximum number of sequences per iteration         | 256                 | Integer                                                            |
-| `CUSTOM_CHAT_TEMPLATE`              | Custom chat template override                     |                     | Jinja2 template string                                             |
-| `ENABLE_AUTO_TOOL_CHOICE`           | Enable automatic tool selection                   | false               | boolean (true or false)                                            |
-| `TOOL_CALL_PARSER`                  | Parser for tool calls                             |                     | "mistral", "hermes", "llama3_json", "granite", "deepseek_v3", etc. |
-| `REASONING_PARSER`                  | Parser for reasoning-capable models               |                     | "deepseek_r1", "qwen3", "granite", "hunyuan_a13b"                  |
-| `OPENAI_SERVED_MODEL_NAME_OVERRIDE` | Override served model name in API                 |                     | String                                                             |
-| `MAX_CONCURRENCY`                   | Maximum concurrent requests                       | 300                 | Integer                                                            |
+1. Go to the [RunPod Hub](https://console.runpod.io/hub)
+2. Find this repo and click **Deploy**
+3. Set your environment variables and GPU
+4. Done
 
-**Pass any vLLM engine arg** not listed above by setting an env var with the **UPPERCASED** field name (e.g. `MAX_MODEL_LEN=4096`, `ENABLE_CHUNKED_PREFILL=true`). The worker auto-discovers all `AsyncEngineArgs` fields from env. See the [vLLM engine args docs](https://docs.vllm.ai/en/latest/configuration/engine_args) for all available options.
+### Option 2: Deploy with Docker Image
 
-For complete configuration options, see the [full configuration documentation](https://github.com/runpod-workers/worker-vllm/blob/main/docs/configuration.md).
+Use a pre-built image or build your own:
 
-## API Usage
-
-This worker supports two API formats: **RunPod native** and **OpenAI-compatible**.
-
-### RunPod Native API
-
-For testing directly in the RunPod UI, use these examples in your endpoint's request tab.
-
-#### Chat Completions
-
-```json
-{
-  "input": {
-    "messages": [
-      { "role": "system", "content": "You are a helpful assistant." },
-      { "role": "user", "content": "What is the capital of France?" }
-    ],
-    "sampling_params": {
-      "max_tokens": 100,
-      "temperature": 0.7
-    }
-  }
-}
+```bash
+# Deploy on RunPod Serverless with these environment variables:
+MODEL_NAME=Qwen/Qwen3.5-35B-A3B-FP8
+MAX_MODEL_LEN=32768
+GPU_MEMORY_UTILIZATION=0.90
+REASONING_PARSER=qwen3
 ```
 
-#### Chat Completions (Streaming)
+GPU: 48GB (L40S, A40) or 80GB (A100, H100)
 
-```json
-{
-  "input": {
-    "messages": [
-      { "role": "user", "content": "Write a short story about a robot." }
-    ],
-    "sampling_params": {
-      "max_tokens": 500,
-      "temperature": 0.8
-    },
-    "stream": true
-  }
-}
+### Option 3: Build Docker Image with Model Baked In
+
+```bash
+export DOCKER_BUILDKIT=1
+export HF_TOKEN="hf_your_token_here"
+
+docker build \
+  --build-arg MODEL_NAME="Qwen/Qwen3.5-35B-A3B-FP8" \
+  --build-arg BASE_PATH="/models" \
+  --secret id=HF_TOKEN,env=HF_TOKEN \
+  -t your-registry/worker-vllm-qwen35-fp8:latest \
+  .
+
+docker push your-registry/worker-vllm-qwen35-fp8:latest
 ```
 
-#### Text Generation
+When deploying a baked image, do **not** attach a Network Volume.
 
-For direct text generation without chat format:
+## Configuration
 
-```json
-{
-  "input": {
-    "prompt": "The capital of France is",
-    "sampling_params": {
-      "max_tokens": 64,
-      "temperature": 0.0
-    }
-  }
-}
-```
+### Core Environment Variables
 
-#### List Models
+| Variable | Default | Description |
+|---|---|---|
+| `MODEL_NAME` | `facebook/opt-125m` | Hugging Face model ID or local path |
+| `HF_TOKEN` | | Hugging Face token for gated models |
+| `MAX_MODEL_LEN` | | Maximum context length in tokens |
+| `GPU_MEMORY_UTILIZATION` | `0.95` | Fraction of GPU VRAM to use (0.0-1.0) |
+| `REASONING_PARSER` | | Reasoning parser (`qwen3` for Qwen3/3.5) |
+| `TENSOR_PARALLEL_SIZE` | `1` | Number of GPUs for tensor parallelism |
+| `QUANTIZATION` | | Quantization method (awq, gptq, squeezellm, bitsandbytes) |
+| `ENFORCE_EAGER` | `false` | Disable CUDA graphs (set `true` if startup crashes) |
 
-```json
-{
-  "input": {
-    "openai_route": "/v1/models"
-  }
-}
-```
+### Tool Calling
 
----
+| Variable | Default | Description |
+|---|---|---|
+| `ENABLE_AUTO_TOOL_CHOICE` | `false` | Enable automatic tool selection |
+| `TOOL_CALL_PARSER` | | Parser for tool calls (e.g. `qwen3_coder`) |
 
-### OpenAI-Compatible API
+### Advanced
 
-For external clients and SDKs, use the `/openai/v1` path prefix with your RunPod API key.
+| Variable | Default | Description |
+|---|---|---|
+| `MAX_NUM_SEQS` | `256` | Max concurrent sequences per iteration |
+| `MAX_CONCURRENCY` | `30` | Max concurrent requests per worker |
+| `ENABLE_PREFIX_CACHING` | `false` | Enable automatic prefix caching |
+| `ENABLE_EXPERT_PARALLEL` | `false` | Enable Expert Parallel for MoE models |
+| `VLLM_NIGHTLY` | `false` | Build arg: replace pinned vLLM with nightly |
 
-#### Chat Completions
+Any vLLM `AsyncEngineArgs` field can be set as an **UPPERCASED** environment variable. The worker auto-discovers all fields. See [full configuration reference](docs/configuration.md).
 
-**Path:** `/openai/v1/chat/completions`
+### Build Arguments (for baking models)
 
-```json
-{
-  "model": "meta-llama/Llama-2-7b-chat-hf",
-  "messages": [
-    { "role": "system", "content": "You are a helpful assistant." },
-    { "role": "user", "content": "What is the capital of France?" }
-  ],
-  "max_tokens": 100,
-  "temperature": 0.7
-}
-```
+| Argument | Default | Description |
+|---|---|---|
+| `MODEL_NAME` | | **(Required)** Hugging Face model ID |
+| `BASE_PATH` | `/runpod-volume` | Storage path (set to `/models` for baked images) |
+| `MODEL_REVISION` | `main` | Model revision |
+| `TOKENIZER_NAME` | | Custom tokenizer (defaults to model tokenizer) |
+| `VLLM_NIGHTLY` | `false` | Use latest nightly vLLM build |
 
-#### Chat Completions (Streaming)
+## Usage: OpenAI API
 
-```json
-{
-  "model": "meta-llama/Llama-2-7b-chat-hf",
-  "messages": [
-    { "role": "user", "content": "Write a short story about a robot." }
-  ],
-  "max_tokens": 500,
-  "temperature": 0.8,
-  "stream": true
-}
-```
-
-#### Text Completions
-
-**Path:** `/openai/v1/completions`
-
-```json
-{
-  "model": "meta-llama/Llama-2-7b-chat-hf",
-  "prompt": "The capital of France is",
-  "max_tokens": 100,
-  "temperature": 0.7
-}
-```
-
-#### List Models
-
-**Path:** `/openai/v1/models`
-
-```json
-{}
-```
-
-#### Response Format
-
-Both APIs return the same response format:
-
-```json
-{
-  "choices": [
-    {
-      "index": 0,
-      "message": { "role": "assistant", "content": "Paris." },
-      "finish_reason": "stop"
-    }
-  ],
-  "usage": { "prompt_tokens": 9, "completion_tokens": 1, "total_tokens": 10 }
-}
-```
-
----
-
-## Usage
-
-Below are minimal `python` snippets so you can copy-paste to get started quickly.
-
-> Replace `<ENDPOINT_ID>` with your endpoint ID and `<API_KEY>` with a [RunPod API key](https://docs.runpod.io/get-started/api-keys).
-
-### OpenAI compatible API
-
-Minimal Python example using the official `openai` SDK:
+The worker is fully compatible with OpenAI's API. Change 3 lines in your existing code:
 
 ```python
 from openai import OpenAI
-import os
 
-# Initialize the OpenAI Client with your RunPod API Key and Endpoint URL
 client = OpenAI(
-    api_key=os.getenv("RUNPOD_API_KEY"),
-    base_url=f"https://api.runpod.ai/v2/<ENDPOINT_ID>/openai/v1",
+    api_key="YOUR_RUNPOD_API_KEY",
+    base_url="https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/openai/v1",
 )
-```
 
-`Chat Completions (Non-Streaming)`
-
-```python
 response = client.chat.completions.create(
-    model="meta-llama/Llama-2-7b-chat-hf",
-    messages=[{"role": "user", "content": "Explain quantum computing in simple terms"}],
-    temperature=0,
+    model="Qwen/Qwen3.5-35B-A3B-FP8",
+    messages=[{"role": "user", "content": "Hello!"}],
+    temperature=0.7,
     max_tokens=100,
 )
-print(f"Response: {response.choices[0].message.content}")
+print(response.choices[0].message.content)
 ```
 
-`Chat Completions (Streaming)`
+### Streaming
 
 ```python
-response_stream = client.chat.completions.create(
-    model="meta-llama/Llama-2-7b-chat-hf",
-    messages=[{"role": "user", "content": "Explain quantum computing in simple terms"}],
-    temperature=0,
-    max_tokens=100,
-    stream=True
+stream = client.chat.completions.create(
+    model="Qwen/Qwen3.5-35B-A3B-FP8",
+    messages=[{"role": "user", "content": "Explain quantum computing."}],
+    stream=True,
 )
-for response in response_stream:
-    print(response.choices[0].delta.content or "", end="", flush=True)
+for chunk in stream:
+    print(chunk.choices[0].delta.content or "", end="", flush=True)
 ```
 
-### RunPod Native API
+### curl
 
-```python
-import requests
+```bash
+curl https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/openai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_RUNPOD_API_KEY" \
+  -d '{
+    "model": "Qwen/Qwen3.5-35B-A3B-FP8",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "temperature": 0.7,
+    "max_tokens": 100
+  }'
+```
 
-response = requests.post(
-    "https://api.runpod.ai/v2/<ENDPOINT_ID>/run",
-    headers={"Authorization": "Bearer <API_KEY>"},
-    json={
-        "input": {
-            "messages": [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "Explain quantum computing in simple terms"}
-            ],
-            "sampling_params": {
-                "temperature": 0.7,
-                "max_tokens": 150
-            }
-        }
+## Usage: Standard (Non-OpenAI)
+
+You can also use RunPod's native API format:
+
+```json
+{
+  "input": {
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "What is 2+2?"}
+    ],
+    "sampling_params": {
+      "temperature": 0.7,
+      "max_tokens": 100
     }
-)
-
-result = response.json()
-print(result["output"])
+  }
+}
 ```
 
-## Compatibility
+## Supported Models
 
-For supported models, see the [vLLM supported models documentation](https://docs.vllm.ai/en/latest/models/supported_models.html).
+Any model supported by vLLM 0.18.0 works, including:
 
-Anything not recognized by worker-vllm is forwarded to vLLM's engine, so advanced options in the vLLM docs (guided generation, LoRA, speculative decoding, etc.) also work.
+- **Qwen3.5** (35B-A3B, 27B, 122B-A10B, 397B-A17B, and small variants)
+- **Qwen3** / **Qwen3-Next**
+- **Llama 3 / 4**, **Gemma 3**, **Mistral**, **DeepSeek V3**
+- And [many more](https://docs.vllm.ai/en/latest/models/supported_models.html)
 
-## Documentation
+## License
 
-- **[🚀 Deployment Guide](https://docs.runpod.io/serverless/vllm/get-started)** - Step-by-step setup
-- **[📖 Configuration Reference](https://github.com/runpod-workers/worker-vllm/blob/main/docs/configuration.md)** - All environment variables
-- **[🏗️ Advanced Deployment](https://github.com/runpod-workers/worker-vllm/blob/main/docs/deployment.md)** - Custom builds and strategies
-- **[🔧 Development Guide](https://github.com/runpod-workers/worker-vllm/blob/main/docs/conventions.md)** - Architecture and patterns
+MIT
