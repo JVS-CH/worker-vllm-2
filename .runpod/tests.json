@@ -1,43 +1,68 @@
-{
-  "tests": [
-    {
-      "name": "basic_inference_test",
-      "input": {
-        "prompt": "Write a short poem about artificial intelligence."
-      },
-      "timeout": 30000
-    },
-    {
-      "name": "openai_messages_test",
-      "input": {
-        "openai_route": "/v1/chat/completions",
-        "openai_input": {
-          "messages": [
-            {
-              "role": "system",
-              "content": "You are a helpful assistant that writes concise responses."
-            },
-            {
-              "role": "user",
-              "content": "Explain what a neural network is in one sentence."
-            }
-          ],
-          "max_tokens": 200,
-          "temperature": 0.1
-        }
-      },
-      "timeout": 30000
-    }
-  ],
-  "config": {
-    "gpuTypeId": "NVIDIA GeForce RTX 4090",
-    "gpuCount": 1,
-    "env": [
-      {
-        "key": "MODEL_NAME",
-        "value": "HuggingFaceTB/SmolLM2-135M-Instruct"
+[
+  {
+    "input": {
+      "openai_route": "/chat/completions",
+      "openai_input": {
+        "model": "Qwen/Qwen3.5-35B-A3B-FP8",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Say hello in one sentence."
+          }
+        ],
+        "max_tokens": 50,
+        "temperature": 0.7,
+        "stream": false
       }
-    ],
-    "allowedCudaVersions": ["12.9", "12.8", "12.7", "12.6", "12.5"]
+    },
+    "expected_output": {
+      "status": "COMPLETED"
+    },
+    "timeout": 600
+  },
+  {
+    "input": {
+      "openai_route": "/chat/completions",
+      "openai_input": {
+        "model": "Qwen/Qwen3.5-35B-A3B-FP8",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful assistant."
+          },
+          {
+            "role": "user",
+            "content": "What is 2+2? Answer with just the number."
+          }
+        ],
+        "max_tokens": 10,
+        "temperature": 0
+      }
+    },
+    "expected_output": {
+      "status": "COMPLETED"
+    },
+    "timeout": 600
+  },
+  {
+    "input": {
+      "openai_route": "/chat/completions",
+      "openai_input": {
+        "model": "Qwen/Qwen3.5-35B-A3B-FP8",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Write a haiku about AI."
+          }
+        ],
+        "max_tokens": 100,
+        "temperature": 0.7,
+        "stream": true
+      }
+    },
+    "expected_output": {
+      "status": "COMPLETED"
+    },
+    "timeout": 600
   }
-}
+]
